@@ -1,6 +1,20 @@
 import carla
 import random
 import time
+import signal
+import sys
+
+actor_list = []
+
+def signal_handler(sig, frame):
+    print("\n🛑 收到停止信号，清理NPC actor")
+    for a in actor_list:
+        if a.is_alive:
+            a.destroy()
+    print("✅ NPC全部清理完毕，退出")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def main():
     client = carla.Client("127.0.0.1", 2000)
@@ -9,50 +23,21 @@ def main():
     blueprint_library = world.get_blueprint_library()
     spawn_points = world.get_map().get_spawn_points()
 
-    # 配置数量
-    NUM_VEHICLES = 15
-    NUM_WALKERS = 8
-
-    actor_list = []
-
-    # 生成车辆
+    NUM_VEHICLES = 4
+    # 只生成车，不自动开autopilot！交给采集脚本的TM统一管理
     vehicle_bps = blueprint_library.filter("vehicle.*")
     for _ in range(NUM_VEHICLES):
         bp = random.choice(vehicle_bps)
-        sp = random.choice(spawn_points)
-        veh = world.try_spawn_actor(bp, sp)
-        if veh is not None:
-            veh.set_autopilot(True)
+        spawn_tf = random.choice(spawn_points)
+        try:
+            veh = world.spawn_actor(bp, spawn_tf)
             actor_list.append(veh)
+        except Exception as e:
+            print(f"生成NPC失败：{e}")
+    print(f"✅ 已生成 {len(actor_list)} 台NPC车辆，等待TM接管控制")
 
-    # 生成行人 + 行走控制器（0.9.16正确蓝图id）
-    walker_bps = blueprint_library.filter("walker.*")
-    walker_controller_bp = blueprint_library.find("controller.ai.walker")
-
-    for _ in range(NUM_WALKERS):
-        bp = random.choice(walker_bps)
-        sp = random.choice(spawn_points)
-        walker = world.try_spawn_actor(bp, sp)
-        if walker is not None:
-            controller = world.try_spawn_actor(walker_controller_bp, carla.Transform(), attach_to=walker)
-            if controller is not None:
-                actor_list.append(walker)
-                actor_list.append(controller)
-                controller.start()
-                controller.go_to_location(world.get_random_location_from_navigation())
-
-    print(f"✅ 已生成 {NUM_VEHICLES} 车辆，{NUM_WALKERS} 行人，actor总数：{len(actor_list)}")
-    print("💡 按 Ctrl+C 清除全部NPC并退出")
-
-    try:
-        while True:
-            time.sleep(0.05)
-    except KeyboardInterrupt:
-        print("\n🛑 开始销毁NPC...")
-        for actor in actor_list:
-            if actor.is_alive:
-                actor.destroy()
-        print("✅ 全部NPC清除完毕")
+    while True:
+        time.sleep(0.2)
 
 if __name__ == "__main__":
     main()
